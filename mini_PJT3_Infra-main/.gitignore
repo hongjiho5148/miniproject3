@@ -1,0 +1,10 @@
+terraform/*.md
+
+terraform/.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+terraform.tfvars
+.terraform/
+terraform.tfstate
+
+manifests/*.txt
