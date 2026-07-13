@@ -77,37 +77,64 @@ SafePay-Vault는 가상계좌 결제 흐름을 중심으로 사용자, 판매자
 
 ```mermaid
 graph TD
-    User[User / Seller / Admin] -->|HTTPS| ALB[AWS ALB]
-    ALB --> FE[React Frontend]
-    ALB --> BE[Spring Boot Backend]
+    User[User / Seller / Admin] -->|HTTP/HTTPS| ALB[AWS ALB<br/>team01-alb]
+    ALB -->|/| FrontSvc[frontend-service<br/>NodePort :80]
+    ALB -->|/api| BackSvc[backend-service<br/>NodePort :80 -> 8080]
 
-    BE -->|JPA| RDS[(AWS RDS MySQL)]
-    BE -->|TTL / Lock| Redis[(Redis / ElastiCache)]
-    BE -->|OAuth2| Google[Google OAuth]
-    BE -->|Webhook Simulation| MockBank[Mock Bank API]
+    subgraph VPC["AWS VPC"]
+      subgraph Public["Public Subnet"]
+        ALB
+        IGW[Internet Gateway]
+        NAT[NAT Gateway]
+        Bastion[Bastion Host]
+      end
 
-    subgraph AWS
-      ALB
-      FE
-      BE
-      RDS
-      Redis
+      subgraph Private["Private Subnet"]
+        subgraph EKS["EKS Cluster"]
+          subgraph FrontNode["frontend node group<br/>role=frontend"]
+            FrontPod[frontend-deployment<br/>React/Nginx<br/>replicas=2]
+          end
+          subgraph BackNode["backend node group<br/>role=backend"]
+            BackPod[backend-deployment<br/>Spring Boot :8080<br/>replicas=2]
+          end
+          FrontSvc --> FrontPod
+          BackSvc --> BackPod
+          ESO[External Secrets Operator]
+        end
+      end
+
+      subgraph Data["Data Layer"]
+        RDS[(RDS MySQL 8.0<br/>publicly_accessible=false)]
+        Redis[(ElastiCache Redis 7<br/>port 6379)]
+      end
     end
 
-    subgraph GitOps
-      GitHub[GitHub Actions] --> ECR[AWS ECR]
-      ECR --> ArgoCD[Argo CD]
-      ArgoCD --> EKS[AWS EKS]
-    end
+    BackPod -->|JPA / 3306| RDS
+    BackPod -->|Redis / 6379| Redis
+    BackPod -->|OAuth2| Google[Google OAuth]
+    BackPod -->|Outbound via NAT| External[External API]
+
+    Secrets[AWS Secrets Manager<br/>team01-mini-project3/backend] --> ESO
+    ESO -->|backend-secret<br/>DB_HOST / DB_PASSWORD / REDIS_HOST| BackPod
+
+    GitHub[GitHub Actions] -->|Docker build & push| ECR[AWS ECR<br/>backend / frontend]
+    ECR -->|image pull| FrontPod
+    ECR -->|image pull| BackPod
+    ArgoCD[Argo CD<br/>App of Apps] -->|sync manifests| EKS
 ```
 
 ### 인프라 구성
 
-- Public Subnet: ALB, NAT Gateway, Bastion Host
-- Private WAS Subnet: Spring Boot 결제 서비스
-- Private Data Subnet: RDS, Redis
-- CI/CD: GitHub Actions, ECR, Argo CD, Kubernetes Manifest
-- IaC: Terraform으로 VPC, EKS, RDS, Redis, ECR, S3 등 구성
+- VPC: Public, Private, Database, Redis Subnet을 Terraform으로 생성합니다.
+- Public Subnet: Internet Gateway, NAT Gateway, Bastion Host, internet-facing ALB 진입 구간입니다.
+- Private Subnet: EKS worker node를 배치하며 `frontend`와 `backend` node group을 분리합니다.
+- Kubernetes: `frontend-deployment`, `backend-deployment`를 각각 replica 2개로 배포하고, `nodeSelector`로 전용 node group에 스케줄링합니다.
+- Ingress: AWS Load Balancer Controller 기반 ALB Ingress를 사용하며 `/`는 프론트엔드, `/api`는 백엔드 서비스로 라우팅합니다.
+- Service: `frontend-service`, `backend-service`는 NodePort 타입이고 ALB Ingress의 target-type은 `ip`로 설정되어 있습니다.
+- Secret: AWS Secrets Manager의 `DB_HOST`, `DB_PASSWORD`, `REDIS_HOST`를 External Secrets Operator가 `backend-secret`으로 동기화해 백엔드 Pod에 주입합니다.
+- Data Layer: RDS MySQL 8.0과 ElastiCache Redis 7을 사용합니다. RDS는 코드상 DB subnet group이 public subnet을 참조하지만 `publicly_accessible=false`와 보안 그룹으로 외부 접근을 차단합니다.
+- CI/CD: GitHub Actions가 Docker 이미지를 ECR에 push하고, Argo CD가 `mini_PJT3_Infra` 저장소의 manifest를 EKS에 자동 동기화합니다.
+- 추가 리소스: ECR backend/frontend repository, S3 파일 버킷, Bastion Host, AWS Load Balancer Controller용 IRSA, External Secrets용 IRSA가 포함됩니다.
 
 <br />
 
@@ -510,11 +537,3 @@ terraform apply
 | `GOOGLE_OAUTH_REDIRECT_URI` | Google OAuth Redirect URI |
 
 <br />
-
-## 참고 문서
-
-- [Backend API 설계서](./mini_PJT3_Backend-main/docs/Controller_API%20설계서.md)
-- [Entity 설계서](./mini_PJT3_Backend-main/docs/Entity%20설계서.md)
-- [Redis 설계서](./mini_PJT3_Backend-main/docs/Redis%20설계서.md)
-- [Security 설계서](./mini_PJT3_Backend-main/docs/Security%20설계서.md)
-- [Infra README](./mini_PJT3_Infra-main/README.md)
