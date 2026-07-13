@@ -61,14 +61,15 @@ SafePay-Vault는 가상계좌 결제 흐름을 중심으로 사용자, 판매자
 
 ## 1. 팀 소개
 
-| 이름 | 역할 | 담당 |
-| :---: | :---: | :--- |
-| 팀원 1 | Backend | 인증/인가, 결제 API, 가상계좌 발급 |
-| 팀원 2 | Frontend | 사용자 결제 화면, 판매자 대시보드 |
-| 팀원 3 | Infra | AWS, Terraform, EKS, Argo CD |
-| 팀원 4 | Backend/Frontend | 관리자 대시보드, 보안 로그, 시뮬레이터 |
+안녕하세요! 보안 격리 기반 가상계좌 결제 시스템을 개발한 팀입니다.  
+각자 맡은 도메인을 나누어 사용자 결제, 관리자 모니터링, 판매자 대시보드, 인프라/배포까지 하나의 결제 흐름으로 연결했습니다.
 
-> 팀원명과 GitHub 링크는 실제 정보에 맞게 교체하면 됩니다.
+| 🥰 이채현 | 😲 홍지호 | 🤪 이준호 | 😆 하서경 | 😮 유지수 |
+| :---: | :---: | :---: | :---: | :---: |
+| <img src="https://avatars.githubusercontent.com/u/107925656?v=4" width="150" alt="이채현 프로필" /> | <img src="https://avatars.githubusercontent.com/u/258748778?v=4" width="150" alt="홍지호 프로필" /> | <img src="https://avatars.githubusercontent.com/u/35024161?v=4" width="150" alt="이준호 프로필" /> | <img src="https://avatars.githubusercontent.com/u/153154159?v=4" width="150" alt="하서경 프로필" /> | <img src="https://avatars.githubusercontent.com/u/166215145?v=4" width="150" alt="유지수 프로필" /> |
+| ![FullStack](https://img.shields.io/badge/FullStack-14B8A6?style=flat-square) | ![BE/FE](https://img.shields.io/badge/BE%2FFE-2563EB?style=flat-square) | ![BE/FE](https://img.shields.io/badge/BE%2FFE-2563EB?style=flat-square) | ![BE/FE](https://img.shields.io/badge/BE%2FFE-2563EB?style=flat-square) | ![Infra/DevOps](https://img.shields.io/badge/Infra%2FDevOps-844FBA?style=flat-square) |
+| 로그인/회원가입<br />OAuth2 구글 로그인 / JWT 인증 구조 설계<br />권한 제어<br /><br />관리자 실시간 모니터링<br />SSE 보안 알림 / 보안 탐지 로그 / 보안 감사<br /><br />인프라/배포<br />DB 설정 / Redis 설정 | 사용자 대시보드<br />상품 주문, 결제 이력 화면 설계<br />입금 시뮬레이터 / 계좌번호, 금액 검증<br />판매자 결제 승인 관리<br />입금대기, 결제완료 상태 관리<br /><br />관리자 대시보드<br />전체 시스템 현황, 계정 조회 / 보안 감사 | 사용자 대시보드<br />1회용 가상계좌 발급<br />계좌 만료 스케줄러<br />입금 확인 및 처리<br />데이터 마스킹 | 판매자 대시보드<br />판매자 매출 통계<br />날짜별 매출 / 주문건수 / 인기상품 TOP5<br /><br />관리자 대시보드<br />보안 위반 탐지 / 탐지 로그 API<br />전체 시스템 현황, 계정 조회<br />데이터 마스킹 | 인프라/배포<br />AWS 환경 설정 / 망 분리 설계<br />Terraform/Docker 기반 배포 환경 구축<br />Git Action 추가<br />Argo CD에 백엔드, 프론트엔드 연결<br />방화벽 설정 확인 / DB 연결 테스트 |
+| github:<br />[chaehyeon42](https://github.com/chaehyeon42) | github:<br />[hongjiho5148](https://github.com/hongjiho5148) | github:<br />[qwer9679](https://github.com/qwer9679) | github:<br />[sknm1106](https://github.com/sknm1106) | github:<br />[yoojisoo99](https://github.com/yoojisoo99) |
 
 <br />
 
@@ -114,42 +115,123 @@ graph TD
 
 ```mermaid
 erDiagram
-    MEMBER ||--o{ PAYMENT : requests
-    MEMBER ||--o{ ADMIN_ACCESS_LOG : records
-    PAYMENT ||--|| VIRTUAL_ACCOUNT : issues
-    PAYMENT ||--o{ PAYMENT_HISTORY : has
-    PRODUCT ||--o{ PAYMENT : ordered
-    SECURITY_VIOLATION_LOG ||--o{ ANOMALY_ALERT : triggers
-    MEMBER ||--o{ MASKING_AUDIT_LOG : audits
+    MEMBERS ||--o{ PRODUCTS : sells
+    MEMBERS ||--o{ PAYMENTS : orders
+    PRODUCTS ||--o{ PAYMENTS : paid_by
+    PAYMENTS ||--o{ PAYMENT_HISTORIES : records
+    PAYMENTS ||--o{ VIRTUAL_ACCOUNTS : issues
+    PAYMENTS ||--o{ MASKING_AUDIT_LOGS : audits
+    VIRTUAL_ACCOUNTS ||--o{ MASKING_AUDIT_LOGS : masks
 
-    MEMBER {
+    MEMBERS {
       bigint id
-      string email
-      string name
-      string role
-      string accountStatus
+      varchar login_id
+      varchar password
+      varchar name
+      varchar email
+      varchar phone
+      varchar provider
+      role role
+      datetime created_at
+      datetime updated_at
     }
 
-    PRODUCT {
+    PRODUCTS {
       bigint id
-      string name
-      int price
-      int stock
+      varchar name
+      bigint price
+      varchar description
+      bigint seller_id
+      datetime created_at
+      datetime updated_at
     }
 
-    PAYMENT {
+    PAYMENTS {
       bigint id
-      string payUuid
-      int amount
-      string transactionStatus
+      varchar pay_uuid
+      bigint member_id
+      bigint product_id
+      varchar product_name
+      bigint total_amount
+      transaction_status status
+      datetime paid_at
+      datetime created_at
+      datetime updated_at
     }
 
-    VIRTUAL_ACCOUNT {
+    PAYMENT_HISTORIES {
       bigint id
-      string bankCode
-      string accountNumber
-      datetime expiredAt
-      boolean deleted
+      bigint payment_id
+      varchar transaction_id
+      bigint deposited_amount
+      datetime paid_at
+      datetime created_at
+      datetime updated_at
+    }
+
+    VIRTUAL_ACCOUNTS {
+      bigint id
+      bigint payment_id
+      varchar account_number
+      varchar masked_account_number
+      bank_code bank_code
+      varchar bank_name
+      account_status status
+      datetime expired_at
+      boolean is_deleted
+      datetime created_at
+      datetime updated_at
+    }
+
+    ADMIN_ACCESS_LOGS {
+      bigint id
+      varchar username
+      varchar ip_address
+      varchar request_method
+      varchar request_path
+      int status_code
+      varchar user_agent
+      datetime created_at
+      datetime updated_at
+    }
+
+    SECURITY_VIOLATION_LOGS {
+      bigint id
+      varchar ip_address
+      varchar request_method
+      varchar request_path
+      int status_code
+      violation_type violation_type
+      varchar user_agent
+      text message
+      datetime created_at
+      datetime updated_at
+    }
+
+    ANOMALY_ALERTS {
+      bigint id
+      alert_level level
+      alert_status status
+      varchar title
+      varchar source_ip
+      bigint violation_count
+      text message
+      datetime created_at
+      datetime updated_at
+    }
+
+    MASKING_AUDIT_LOGS {
+      bigint id
+      bigint payment_id
+      bigint virtual_account_id
+      varchar masked_name
+      varchar masked_account_number
+      varchar masked_phone
+      varchar masked_email
+      audit_result result
+      text reason
+      datetime created_at
+      datetime updated_at
     }
 ```
 
@@ -436,4 +518,3 @@ terraform apply
 - [Redis 설계서](./mini_PJT3_Backend-main/docs/Redis%20설계서.md)
 - [Security 설계서](./mini_PJT3_Backend-main/docs/Security%20설계서.md)
 - [Infra README](./mini_PJT3_Infra-main/README.md)
-
