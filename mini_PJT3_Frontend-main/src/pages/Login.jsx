@@ -24,8 +24,8 @@ const Login = () => {
     setIsSubmitting(true);
 
     try {
-      //  주소를 구글 경로에서 일반 로그인 처리 엔드포인트(/api/auth/login)로 변경했습니다.
-      const response = await axios.post('http://team01-alb-1090661033.ap-northeast-2.elb.amazonaws.com/api/auth/login', {
+      // LOCAL DEV: 원래 ALB 절대주소였음 — vite proxy로 로컬 백엔드 연결하도록 상대경로로 변경
+      const response = await axios.post('/api/auth/login', {
         loginId: loginId,
         password: password
       }, {

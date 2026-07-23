@@ -58,6 +58,22 @@ public class Team1Application {
             } catch (Exception e) {
                 System.out.println(">>> 테스트 판매자 계정이 이미 존재하거나 생성에 실패했습니다.");
             }
+
+            // 3. 관리자(ADMIN) 테스트 계정 생성
+            MemberJoinRequest admin = new MemberJoinRequest();
+            admin.setLoginId("admin01");
+            admin.setPassword("1234");
+            admin.setName("관리자");
+            admin.setEmail("admin@test.com");
+            admin.setPhone("010-5555-6666");
+            admin.setRole("ADMIN"); // 관리자 권한 부여
+
+            try {
+                authService.join(admin);
+                System.out.println(">>> 테스트 관리자 계정 생성 완료: ID(admin01) / PW(1234)");
+            } catch (Exception e) {
+                System.out.println(">>> 테스트 관리자 계정이 이미 존재하거나 생성에 실패했습니다.");
+            }
         };
     }
 }

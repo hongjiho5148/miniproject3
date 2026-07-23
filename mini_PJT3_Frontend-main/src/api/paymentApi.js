@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // 공통 설정이 담긴 인스턴스 생성
 const api = axios.create({
-  baseURL: 'http://team01-alb-1090661033.ap-northeast-2.elb.amazonaws.com',
+  baseURL: '/api', // LOCAL DEV: 원래 ALB 절대주소였음 (아래 참고) — vite proxy로 로컬 백엔드 연결
   withCredentials: true, // 세션 로그인을 유지하기 위해 필수!
 });
 
