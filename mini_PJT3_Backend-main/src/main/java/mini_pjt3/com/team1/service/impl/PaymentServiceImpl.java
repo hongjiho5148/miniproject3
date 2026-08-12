@@ -11,10 +11,12 @@ import mini_pjt3.com.team1.enums.BankCode;
 import mini_pjt3.com.team1.enums.TransactionStatus;
 import mini_pjt3.com.team1.repository.*;
 import mini_pjt3.com.team1.service.PaymentService;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.security.access.AccessDeniedException;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -30,6 +32,11 @@ public class PaymentServiceImpl implements PaymentService {
     private final VirtualAccountRepository virtualAccountRepository;
     private final MemberRepository memberRepository;
     private final ProductRepository productRepository;
+    private final RedisTemplate<String, Object> redisTemplate;
+
+    // 가상계좌 중복 발급 방지 락이 유지되는 시간. 버튼 연타나 네트워크 재시도로 인한
+    // 중복 요청을 걸러내는 목적이라 짧게 잡아도 충분하다.
+    private static final Duration ISSUE_LOCK_TTL = Duration.ofSeconds(5);
 
     // 1. [조회] 판매자용 대시보드 리스트 수정
     @Override
@@ -102,6 +109,14 @@ public class PaymentServiceImpl implements PaymentService {
 
     @Transactional
     public PaymentResponse issueVirtualAccount(Long memberId, PaymentRequest dto) {
+        // 0. 중복 발급 방지: 동일 회원이 동일 상품에 대해 짧은 시간 안에 다시 요청하면 막는다.
+        // 결제 버튼 연타나 네트워크 재시도로 같은 주문에 가상계좌가 두 번 발급되는 걸 방지하기 위함.
+        String lockKey = "payment:issue:lock:" + memberId + ":" + dto.getProductId();
+        Boolean acquired = redisTemplate.opsForValue().setIfAbsent(lockKey, "LOCKED", ISSUE_LOCK_TTL);
+        if (Boolean.FALSE.equals(acquired)) {
+            throw new IllegalStateException("이미 처리 중인 요청입니다. 잠시 후 다시 시도해주세요.");
+        }
+
         // 1. 멤버 조회
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
