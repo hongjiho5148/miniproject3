@@ -13,6 +13,8 @@ import mini_pjt3.com.team1.repository.PaymentHistoryRepository;
 import mini_pjt3.com.team1.repository.PaymentRepository;
 import mini_pjt3.com.team1.repository.ProductRepository;
 import mini_pjt3.com.team1.repository.VirtualAccountRepository;
+import org.springframework.cache.CacheManager;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -40,6 +42,8 @@ class PaymentServiceImplTest {
     @Mock private VirtualAccountRepository virtualAccountRepository;
     @Mock private MemberRepository memberRepository;
     @Mock private ProductRepository productRepository;
+    @Mock private RedisTemplate<String, Object> redisTemplate;
+    @Mock private CacheManager cacheManager;
 
     @InjectMocks
     private PaymentServiceImpl paymentService;

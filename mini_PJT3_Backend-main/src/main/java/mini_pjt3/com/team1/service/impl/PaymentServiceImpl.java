@@ -11,6 +11,9 @@ import mini_pjt3.com.team1.enums.BankCode;
 import mini_pjt3.com.team1.enums.TransactionStatus;
 import mini_pjt3.com.team1.repository.*;
 import mini_pjt3.com.team1.service.PaymentService;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,13 +36,30 @@ public class PaymentServiceImpl implements PaymentService {
     private final MemberRepository memberRepository;
     private final ProductRepository productRepository;
     private final RedisTemplate<String, Object> redisTemplate;
+    private final CacheManager cacheManager;
+
+    private static final String SELLER_PAYMENTS_CACHE = "sellerPayments";
 
     // 가상계좌 중복 발급 방지 락이 유지되는 시간. 버튼 연타나 네트워크 재시도로 인한
     // 중복 요청을 걸러내는 목적이라 짧게 잡아도 충분하다.
     private static final Duration ISSUE_LOCK_TTL = Duration.ofSeconds(5);
 
+    /**
+     * 판매자의 결제 목록 캐시를 지운다. 결제 상태가 바뀌는 지점(승인/입금보고/만료/신규발급)마다
+     * 호출해서, 캐시가 무효화 시점을 놓치더라도 5분 TTL이 안전망으로 남아있는 구조.
+     * sellerId를 직접 파라미터로 받지 않는 메서드(reportDeposit, expirePayment)가 있어서
+     * 애노테이션 하나로는 표현이 안 돼, CacheManager를 직접 써서 조회 후 지우는 방식을 택했다.
+     */
+    private void evictSellerPaymentsCache(Long sellerId) {
+        Cache cache = cacheManager.getCache(SELLER_PAYMENTS_CACHE);
+        if (cache != null) {
+            cache.evict(sellerId);
+        }
+    }
+
     // 1. [조회] 판매자용 대시보드 리스트 수정
     @Override
+    @Cacheable(value = SELLER_PAYMENTS_CACHE, key = "#sellerId")
     @Transactional(readOnly = true)
     public List<PaymentResponse> getPaymentsBySeller(Long sellerId) {
 
@@ -90,6 +110,7 @@ public class PaymentServiceImpl implements PaymentService {
                 .paidAt(LocalDateTime.now())
                 .build();
         paymentHistoryRepository.save(history);
+        evictSellerPaymentsCache(sellerId);
     }
 
     // 3. 구매자가 "입금했어요" 클릭
@@ -103,6 +124,7 @@ public class PaymentServiceImpl implements PaymentService {
         }
 
         payment.updateStatus(TransactionStatus.DEPOSITED);
+        evictSellerPaymentsCache(payment.getProduct().getSellerId());
         return PaymentResponse.builder().payUuid(payUuid).status(TransactionStatus.DEPOSITED).build();
     }
 
@@ -147,6 +169,7 @@ public class PaymentServiceImpl implements PaymentService {
                 .payment(payment)
                 .build();
         virtualAccountRepository.save(vAccount);
+        evictSellerPaymentsCache(product.getSellerId());
 
         // 5. 응답 리턴
         return PaymentResponse.builder()
@@ -287,6 +310,8 @@ public class PaymentServiceImpl implements PaymentService {
         virtualAccountRepository.findByPaymentId(payment.getId()).ifPresent(va -> {
             va.setStatus(AccountStatus.EXPIRED); //
         });
+
+        evictSellerPaymentsCache(payment.getProduct().getSellerId());
     }
 
 
