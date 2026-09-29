@@ -20,48 +20,21 @@
 
 <br />
 
-## 프로젝트 소개 및 개요
+## 목차
 
-- 프로젝트명: **SafePay-Vault**
-- 주제: **보안 격리 기반 가상계좌 결제 시스템**
-- 핵심 가치: **정보 은닉, 네트워크 격리, 결제 정합성**
-- 구성: Frontend, Backend, Infra 분리형 프로젝트
-- 주요 사용자: 일반 사용자, 판매자, 관리자
-
-### 서비스 소개
-
-SafePay-Vault는 가상계좌 결제 흐름을 중심으로 사용자, 판매자, 관리자 역할별 기능을 제공하는 결제 시스템입니다.
-
-- 사용자는 상품 결제 요청 후 1:1로 매칭되는 가상계좌를 발급받고 결제 상태를 확인할 수 있습니다.
-- 판매자는 판매 현황, 일별 매출, 주문 수, 상품 순위 등 정산에 필요한 지표를 대시보드에서 확인할 수 있습니다.
-- 관리자는 시스템 상태, 보안 로그, 이상 거래 알림, 입금 시뮬레이터를 통해 결제 흐름과 보안 이벤트를 관리할 수 있습니다.
-- 백엔드는 JWT/OAuth2, RBAC, Redis 기반 중복 방지, 가상계좌 만료 처리, 보안 로그 기록을 담당합니다.
-- 인프라는 AWS 기반 3-Tier 구조와 Terraform, Kubernetes, Argo CD를 활용해 배포 자동화와 네트워크 격리를 구성합니다.
-
-<br />
-
-## SafePay-Vault 둘러보기
-
-<details>
-<summary>목차</summary>
-
-- [1. 팀 소개](#1-팀-소개)
-- [2. 아키텍처](#2-아키텍처)
-- [3. ERD](#3-erd)
-- [4. 주요 기능](#4-주요-기능)
-- [5. 기술 스택](#5-기술-스택)
-- [6. 기술 선택 이유](#6-기술-선택-이유)
+- [1. 팀원 소개](#1-팀원-소개)
+- [2. 개요](#2-개요)
+- [3. 기술 스택](#3-기술-스택)
+- [4. 실제 화면 캡처](#4-실제-화면-캡처)
+- [5. 중요 기술 및 기능](#5-중요-기술-및-기능)
+- [6. 도메인](#6-도메인)
 - [7. 프로젝트 구조](#7-프로젝트-구조)
-- [8. 화면 구성](#8-화면-구성)
-- [9. 트러블슈팅](#9-트러블슈팅)
-
-</details>
 
 <br />
 
-## 1. 팀 소개
+## 1. 팀원 소개
 
-안녕하세요! 보안 격리 기반 가상계좌 결제 시스템을 개발한 팀입니다.  
+안녕하세요! 보안 격리 기반 가상계좌 결제 시스템을 개발한 5인 팀입니다.
 각자 맡은 도메인을 나누어 사용자 결제, 관리자 모니터링, 판매자 대시보드, 인프라/배포까지 하나의 결제 흐름으로 연결했습니다.
 
 | 🥰 이채현 | 😲 홍지호 | 🤪 이준호 | 😆 하서경 | 😮 유지수 |
@@ -73,250 +46,28 @@ SafePay-Vault는 가상계좌 결제 흐름을 중심으로 사용자, 판매자
 
 <br />
 
-## 2. 아키텍처
+## 2. 개요
 
-```mermaid
-graph TD
-    User[User / Seller / Admin] -->|HTTP/HTTPS| ALB[AWS ALB<br/>team01-alb]
-    ALB -->|/| FrontSvc[frontend-service<br/>NodePort :80]
-    ALB -->|/api| BackSvc[backend-service<br/>NodePort :80 -> 8080]
+- **프로젝트명**: SafePay-Vault
+- **주제**: 보안 격리 기반 가상계좌 결제 시스템
+- **핵심 가치**: 정보 은닉(데이터 휘발성), 네트워크 격리, 결제 정합성
+- **기간**: 2026.05.07 ~ 2026.05.18 (약 2주)
+- **구성**: Frontend / Backend / Infra 분리형 저장소
+- **주요 사용자**: 일반 사용자, 판매자, 관리자
 
-    subgraph VPC["AWS VPC"]
-      subgraph Public["Public Subnet"]
-        ALB
-        IGW[Internet Gateway]
-        NAT[NAT Gateway]
-        Bastion[Bastion Host]
-      end
+### 서비스 소개
 
-      subgraph Private["Private Subnet"]
-        subgraph EKS["EKS Cluster"]
-          subgraph FrontNode["frontend node group<br/>role=frontend"]
-            FrontPod[frontend-deployment<br/>React/Nginx<br/>replicas=2]
-          end
-          subgraph BackNode["backend node group<br/>role=backend"]
-            BackPod[backend-deployment<br/>Spring Boot :8080<br/>replicas=2]
-          end
-          FrontSvc --> FrontPod
-          BackSvc --> BackPod
-          ESO[External Secrets Operator]
-        end
-      end
+SafePay-Vault는 가상계좌 결제 흐름을 중심으로 사용자, 판매자, 관리자 역할별 기능을 제공하는 결제 시스템입니다.
 
-      subgraph Data["Data Layer"]
-        RDS[(RDS MySQL 8.0<br/>publicly_accessible=false)]
-        Redis[(ElastiCache Redis 7<br/>port 6379)]
-      end
-    end
-
-    BackPod -->|JPA / 3306| RDS
-    BackPod -->|Redis / 6379| Redis
-    BackPod -->|OAuth2| Google[Google OAuth]
-    BackPod -->|Outbound via NAT| External[External API]
-
-    Secrets[AWS Secrets Manager<br/>team01-mini-project3/backend] --> ESO
-    ESO -->|backend-secret<br/>DB_HOST / DB_PASSWORD / REDIS_HOST| BackPod
-
-    GitHub[GitHub Actions] -->|Docker build & push| ECR[AWS ECR<br/>backend / frontend]
-    ECR -->|image pull| FrontPod
-    ECR -->|image pull| BackPod
-    ArgoCD[Argo CD<br/>App of Apps] -->|sync manifests| EKS
-```
-
-### 인프라 구성
-
-- VPC: Public, Private, Database, Redis Subnet을 Terraform으로 생성합니다.
-- Public Subnet: Internet Gateway, NAT Gateway, Bastion Host, internet-facing ALB 진입 구간입니다.
-- Private Subnet: EKS worker node를 배치하며 `frontend`와 `backend` node group을 분리합니다.
-- Kubernetes: `frontend-deployment`, `backend-deployment`를 각각 replica 2개로 배포하고, `nodeSelector`로 전용 node group에 스케줄링합니다.
-- Ingress: AWS Load Balancer Controller 기반 ALB Ingress를 사용하며 `/`는 프론트엔드, `/api`는 백엔드 서비스로 라우팅합니다.
-- Service: `frontend-service`, `backend-service`는 NodePort 타입이고 ALB Ingress의 target-type은 `ip`로 설정되어 있습니다.
-- Secret: AWS Secrets Manager의 `DB_HOST`, `DB_PASSWORD`, `REDIS_HOST`를 External Secrets Operator가 `backend-secret`으로 동기화해 백엔드 Pod에 주입합니다.
-- Data Layer: RDS MySQL 8.0과 ElastiCache Redis 7을 사용합니다. RDS는 코드상 DB subnet group이 public subnet을 참조하지만 `publicly_accessible=false`와 보안 그룹으로 외부 접근을 차단합니다.
-- CI/CD: GitHub Actions가 Docker 이미지를 ECR에 push하고, Argo CD가 `mini_PJT3_Infra` 저장소의 manifest를 EKS에 자동 동기화합니다.
-- 추가 리소스: ECR backend/frontend repository, S3 파일 버킷, Bastion Host, AWS Load Balancer Controller용 IRSA, External Secrets용 IRSA가 포함됩니다.
+- 사용자는 상품 결제 요청 후 1:1로 매칭되는 가상계좌를 발급받고 결제 상태를 확인할 수 있습니다.
+- 판매자는 판매 현황, 일별 매출, 주문 수, 상품 순위 등 정산에 필요한 지표를 대시보드에서 확인할 수 있습니다.
+- 관리자는 시스템 상태, 보안 로그, 이상 거래 알림, 입금 시뮬레이터를 통해 결제 흐름과 보안 이벤트를 관리할 수 있습니다.
+- 백엔드는 JWT/OAuth2, RBAC, 가상계좌 만료 처리, 동시성 제어, 보안 로그 기록을 담당합니다.
+- 인프라는 AWS 기반 3-Tier 구조와 Terraform, Kubernetes, Argo CD를 활용해 배포 자동화와 네트워크 격리를 구성합니다.
 
 <br />
 
-## 3. ERD
-
-```mermaid
-erDiagram
-    MEMBERS ||--o{ PRODUCTS : sells
-    MEMBERS ||--o{ PAYMENTS : orders
-    PRODUCTS ||--o{ PAYMENTS : paid_by
-    PAYMENTS ||--o{ PAYMENT_HISTORIES : records
-    PAYMENTS ||--o{ VIRTUAL_ACCOUNTS : issues
-    PAYMENTS ||--o{ MASKING_AUDIT_LOGS : audits
-    VIRTUAL_ACCOUNTS ||--o{ MASKING_AUDIT_LOGS : masks
-
-    MEMBERS {
-      bigint id
-      varchar login_id
-      varchar password
-      varchar name
-      varchar email
-      varchar phone
-      varchar provider
-      role role
-      datetime created_at
-      datetime updated_at
-    }
-
-    PRODUCTS {
-      bigint id
-      varchar name
-      bigint price
-      varchar description
-      bigint seller_id
-      datetime created_at
-      datetime updated_at
-    }
-
-    PAYMENTS {
-      bigint id
-      varchar pay_uuid
-      bigint member_id
-      bigint product_id
-      varchar product_name
-      bigint total_amount
-      transaction_status status
-      datetime paid_at
-      datetime created_at
-      datetime updated_at
-    }
-
-    PAYMENT_HISTORIES {
-      bigint id
-      bigint payment_id
-      varchar transaction_id
-      bigint deposited_amount
-      datetime paid_at
-      datetime created_at
-      datetime updated_at
-    }
-
-    VIRTUAL_ACCOUNTS {
-      bigint id
-      bigint payment_id
-      varchar account_number
-      varchar masked_account_number
-      bank_code bank_code
-      varchar bank_name
-      account_status status
-      datetime expired_at
-      boolean is_deleted
-      datetime created_at
-      datetime updated_at
-    }
-
-    ADMIN_ACCESS_LOGS {
-      bigint id
-      varchar username
-      varchar ip_address
-      varchar request_method
-      varchar request_path
-      int status_code
-      varchar user_agent
-      datetime created_at
-      datetime updated_at
-    }
-
-    SECURITY_VIOLATION_LOGS {
-      bigint id
-      varchar ip_address
-      varchar request_method
-      varchar request_path
-      int status_code
-      violation_type violation_type
-      varchar user_agent
-      text message
-      datetime created_at
-      datetime updated_at
-    }
-
-    ANOMALY_ALERTS {
-      bigint id
-      alert_level level
-      alert_status status
-      varchar title
-      varchar source_ip
-      bigint violation_count
-      text message
-      datetime created_at
-      datetime updated_at
-    }
-
-    MASKING_AUDIT_LOGS {
-      bigint id
-      bigint payment_id
-      bigint virtual_account_id
-      varchar masked_name
-      varchar masked_account_number
-      varchar masked_phone
-      varchar masked_email
-      audit_result result
-      text reason
-      datetime created_at
-      datetime updated_at
-    }
-```
-
-<br />
-
-## 4. 주요 기능
-
-<details>
-<summary>사용자 기능</summary>
-
-- 회원가입 및 로그인
-- Google OAuth2 로그인
-- 사용자 역할 기반 접근 제어
-- 상품 선택 및 결제 요청
-- 가상계좌 발급
-- 결제 내역 및 결제 상태 조회
-
-</details>
-
-<details>
-<summary>판매자 기능</summary>
-
-- 판매자 대시보드
-- 일별 매출 차트
-- 주문 수 통계
-- 상품 판매 순위
-- 결제 승인 현황 조회
-
-</details>
-
-<details>
-<summary>관리자 기능</summary>
-
-- 관리자 계정 관리
-- 시스템 상태 조회
-- 보안 요약 지표 확인
-- 접근 로그 및 위반 로그 조회
-- 이상 거래 알림 모니터링
-- 입금 시뮬레이터로 성공/실패/지연 케이스 테스트
-
-</details>
-
-<details>
-<summary>보안 및 결제 로직</summary>
-
-- JWT 기반 인증 처리
-- RBAC 기반 권한 분리
-- Redis를 활용한 중복 요청 방지
-- 가상계좌 3시간 만료 처리
-- 결제 완료 후 계좌번호 마스킹 및 Soft Delete
-- 보안 위반 로그 및 관리자 접근 로그 기록
-- SSE 기반 실시간 알림 구조
-
-</details>
-
-<br />
-
-## 5. 기술 스택
+## 3. 기술 스택
 
 ### Frontend
 
@@ -340,6 +91,7 @@ erDiagram
   <img src="https://img.shields.io/badge/JWT-000000?style=flat-square&logo=jsonwebtokens&logoColor=white" />
   <img src="https://img.shields.io/badge/Redis-DC382D?style=flat-square&logo=redis&logoColor=white" />
   <img src="https://img.shields.io/badge/MySQL-4479A1?style=flat-square&logo=mysql&logoColor=white" />
+  <img src="https://img.shields.io/badge/JUnit5-25A162?style=flat-square&logo=junit5&logoColor=white" />
 </p>
 
 ### Infra / DevOps
@@ -355,27 +107,125 @@ erDiagram
 
 <br />
 
-## 6. 기술 선택 이유
+## 4. 실제 화면 캡처
 
-### Spring Boot
+로컬 환경에 직접 백엔드(Spring Boot) · 프론트엔드(React) · Redis · MySQL을 띄워서 캡처한 실제 실행 화면입니다.
 
-결제, 인증, 관리자 기능처럼 도메인 경계가 명확한 API를 빠르게 구성하기 위해 Spring Boot를 사용했습니다. Spring Security, JPA, Validation, Redis 연동 등 필요한 기능을 안정적으로 통합할 수 있어 백엔드 구현 생산성을 높일 수 있었습니다.
+### 로그인 / 회원가입
 
-### Redis
+<p>
+  <img src="docs/screenshots/01-login.jpg" alt="로그인 화면" width="420" />
+  <img src="docs/screenshots/02-register.jpg" alt="회원가입 화면" width="420" />
+</p>
 
-가상계좌 발급은 중복 요청 제어와 만료 시간이 중요합니다. Redis의 빠른 읽기/쓰기와 TTL 기능을 활용해 중복 발급 방지, 가상계좌 만료 처리, 결제 흐름의 임시 상태 관리에 적합하다고 판단했습니다.
+### 사용자 화면
 
-### React + Vite
+<p>
+  <img src="docs/screenshots/03-user-home.jpg" alt="사용자 홈" width="420" />
+  <img src="docs/screenshots/04-order.jpg" alt="주문 화면" width="420" />
+</p>
+<p>
+  <img src="docs/screenshots/05-virtual-account.jpg" alt="가상계좌 발급 완료" width="420" />
+  <img src="docs/screenshots/06-payment-history.jpg" alt="결제 이력" width="420" />
+</p>
 
-사용자, 판매자, 관리자 화면을 역할별 라우팅으로 분리하고 빠르게 개발하기 위해 React를 선택했습니다. Vite는 개발 서버 구동과 빌드 속도가 빨라 화면 개발과 테스트 반복에 유리했습니다.
+### 판매자 화면
 
-### Zustand
+<p>
+  <img src="docs/screenshots/07-seller-sales.jpg" alt="판매자 매출 통계" width="420" />
+  <img src="docs/screenshots/08-seller-approval.jpg" alt="판매자 결제 승인 관리" width="420" />
+</p>
 
-로그인 사용자 정보와 인증 상태처럼 전역에서 필요한 상태를 간단하게 관리하기 위해 Zustand를 사용했습니다. Redux보다 설정이 가볍고, 작은 규모의 프로젝트에서 필요한 상태만 명확하게 다루기 좋았습니다.
+### 관리자 화면
 
-### Terraform + EKS + Argo CD
+<p>
+  <img src="docs/screenshots/09-admin-monitoring.jpg" alt="관리자 실시간 보안 모니터링" width="420" />
+  <img src="docs/screenshots/10-admin-summary.jpg" alt="관리자 전체 시스템 요약" width="420" />
+</p>
 
-인프라 리소스를 코드로 관리해 재현 가능한 배포 환경을 만들기 위해 Terraform을 사용했습니다. EKS와 Argo CD를 함께 구성해 컨테이너 기반 배포와 GitOps 흐름을 경험할 수 있도록 설계했습니다.
+### 입금 시뮬레이터
+
+<p>
+  <img src="docs/screenshots/11-simulator.jpg" alt="입금 시뮬레이터" width="420" />
+</p>
+
+<br />
+
+## 5. 중요 기술 및 기능
+
+<details>
+<summary>사용자 기능</summary>
+
+- 회원가입 및 로그인 (일반 로그인 / Google OAuth2)
+- 역할 기반 접근 제어 (USER / SELLER / ADMIN)
+- 상품 선택 및 결제 요청, 1:1 매칭 가상계좌 발급
+- 결제 상태 전이(발급 → 입금대기 → 승인 → 만료) 조회 및 만료 카운트다운
+
+</details>
+
+<details>
+<summary>판매자 기능</summary>
+
+- 판매자 대시보드 (일별 매출 차트, 주문 수 통계, 상품 판매 순위)
+- 결제 승인 대기 / 완료 목록 분리 관리
+- 입금 확인 승인 처리
+
+</details>
+
+<details>
+<summary>관리자 기능</summary>
+
+- 관리자 계정 관리 및 계정 현황 조회
+- 시스템 상태 및 보안 요약 지표 확인
+- 접근 로그 및 보안 위반 로그 조회, SSE 기반 실시간 알림
+- 입금 시뮬레이터로 성공/실패 케이스 검증
+
+</details>
+
+<details>
+<summary>보안 및 결제 정합성</summary>
+
+- JWT 기반 인증 처리, RBAC 기반 권한 분리
+- 가상계좌 3시간 만료 처리 (서버 스케줄러 + 화면 카운트다운 이중 구조)
+- 결제 완료 후 계좌번호 마스킹 및 Soft Delete
+- **낙관적 락(@Version) 기반 동시성 제어** — 결제 승인 요청이 동시에 들어와도 상태가 어긋나지 않도록 버전 충돌을 감지해 409로 차단
+- **Redis 기반 가상계좌 중복 발급 방지** — 동일 회원·상품에 대한 단시간 중복 요청을 락으로 차단
+- **Redis 캐싱 + 쓰기 시점 무효화** — 판매자 결제 목록을 캐싱하고, 승인/입금보고/만료/발급 시점마다 직접 캐시를 무효화
+- **전역 예외 처리(GlobalExceptionHandler)** — 예외 종류별 상태 코드(400/403/409/500)와 응답 형식을 통일
+- **입금 검증 시뮬레이터** — 실제 데이터 변경 없이 계좌 존재 여부 → 소유자 → 계좌 상태 → 금액 순으로 검증
+- 보안 위반 로그 및 관리자 접근 로그 기록, SSE 기반 실시간 알림 구조
+
+</details>
+
+<br />
+
+## 6. 도메인
+
+SafePay-Vault의 핵심 도메인은 **가상계좌 기반 결제**입니다.
+
+### 결제 상태 전이
+
+```
+발급(PENDING) → 입금대기(DEPOSITED) → 승인(PAID)
+                         ↓ (미승인 시)
+                       만료(EXPIRED)
+```
+
+- **발급**: 상품 주문 시 1:1로 매칭되는 1회용 가상계좌를 랜덤 은행 · 계좌번호로 발급하고, 3시간의 유효 시간을 부여합니다.
+- **입금대기 → 승인**: 구매자가 입금을 보고하면 판매자가 이를 확인하고 승인합니다. 각 단계는 API 진입 시점에 직전 상태와 소유권을 검증한 뒤에만 다음 단계로 넘어갑니다.
+- **만료**: 유효 시간 내에 처리되지 않은 결제는 자동으로 만료 처리되며, 이미 승인된 건은 만료 대상에서 제외됩니다.
+
+### 핵심 엔티티
+
+| 엔티티 | 역할 |
+| --- | --- |
+| `Payment` | 결제 건의 상태(발급/입금대기/승인/만료)와 금액, 회원·상품 연관관계를 관리 |
+| `VirtualAccount` | 결제 건에 1:1로 매칭되는 1회용 가상계좌, 만료 시각과 마스킹 여부를 관리 |
+| `PaymentHistory` | 승인이 확정된 시점의 거래 기록 (중복 승인 방지를 위한 유니크 트랜잭션 ID) |
+
+### 입금 검증 도메인
+
+실제 은행 연동 없이 입금 신호를 재현·검증하기 위한 별도 도메인입니다. 계좌 존재 여부 → 소유자 일치 → 계좌 상태 → 금액 일치 순으로 단계별 검증을 수행하며, 실제 결제 데이터는 변경하지 않습니다.
 
 <br />
 
@@ -385,13 +235,16 @@ erDiagram
 miniproject3
 ├─ mini_PJT3_Backend-main
 │  ├─ src/main/java/mini_pjt3/com/team1
-│  │  ├─ config
+│  │  ├─ config       # SecurityConfig, RedisConfig 등
 │  │  ├─ controller
 │  │  ├─ dto
 │  │  ├─ entity
 │  │  ├─ enums
+│  │  ├─ exception    # GlobalExceptionHandler
 │  │  ├─ repository
 │  │  └─ service
+│  ├─ src/test/java/mini_pjt3/com/team1
+│  │  └─ service/impl # PaymentServiceImplTest (상태 전이 단위 테스트)
 │  ├─ src/main/resources
 │  ├─ docs
 │  ├─ Dockerfile
@@ -412,89 +265,9 @@ miniproject3
 │  ├─ manifests
 │  ├─ argocd
 │  └─ docker
-├─ README (1).md
+├─ docs/screenshots      # 실제 화면 캡처 이미지
 └─ README.md
 ```
-
-<br />
-
-## 8. 화면 구성
-
-### 로그인 / 회원가입
-
-- 일반 로그인
-- Google OAuth2 로그인
-- 추가 정보 입력
-- 권한별 초기 페이지 이동
-
-### 사용자 화면
-
-- 상품 목록
-- 결제 요청
-- 가상계좌 확인
-- 결제 내역 조회
-
-### 판매자 화면
-
-- 매출 요약 카드
-- 일별 매출 차트
-- 주문 수 차트
-- 상품 순위 테이블
-- 결제 승인 현황
-
-### 관리자 화면
-
-- 계정 관리
-- 시스템 상태 확인
-- 보안 로그 모니터링
-- 이상 거래 알림
-- 입금 시뮬레이터
-
-> 실제 화면 캡처 이미지를 추가하면 아래 형식으로 넣으면 됩니다.
-
-```md
-<img src="이미지_URL" alt="화면 설명" width="800px" />
-```
-
-<br />
-
-## 9. 트러블슈팅
-
-### 1. 역할 기반 라우팅 처리
-
-#### 문제
-
-사용자, 판매자, 관리자 페이지가 하나의 React 앱 안에 함께 존재하기 때문에 로그인한 사용자의 권한에 따라 접근 가능한 화면을 제한해야 했습니다.
-
-#### 해결
-
-`ProtectedRoute` 컴포넌트를 만들어 허용된 역할 목록을 전달하고, 현재 로그인 사용자의 권한이 일치할 때만 페이지를 렌더링하도록 구성했습니다.
-
-```jsx
-<ProtectedRoute allowedRoles={['ADMIN']}>
-  <AdminDashboard />
-</ProtectedRoute>
-```
-
-### 2. 가상계좌 중복 발급 방지
-
-#### 문제
-
-사용자가 결제 버튼을 여러 번 클릭하거나 네트워크 재시도로 동일 주문에 대한 가상계좌가 중복 발급될 수 있었습니다.
-
-#### 해결
-
-Redis를 활용해 주문 단위의 중복 요청을 제어하고, 발급된 가상계좌에 만료 시간을 부여해 결제 흐름의 일관성을 유지했습니다.
-
-### 3. 민감 정보 노출 최소화
-
-#### 문제
-
-가상계좌번호, 관리자 접근 로그, 결제 관련 정보는 로그나 응답에서 그대로 노출될 경우 보안 위험이 있습니다.
-
-#### 해결
-
-결제 완료 후 계좌번호 마스킹과 Soft Delete를 적용하고, 관리자 접근 로그와 마스킹 감사 로그를 별도로 기록해 추적 가능성을 확보했습니다.
 
 <br />
 
