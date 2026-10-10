@@ -113,6 +113,33 @@ public class PaymentServiceImpl implements PaymentService {
         evictSellerPaymentsCache(sellerId);
     }
 
+    // 2-1. [취소] 구매자가 승인 전 결제를 직접 취소
+    // Payment의 @Version 낙관적 락이 approvePayment와 동일한 행을 대상으로 하기 때문에,
+    // 승인 요청과 취소 요청이 거의 동시에 들어와도 먼저 커밋된 쪽만 성공하고
+    // 나머지는 버전 충돌로 막힌다(ObjectOptimisticLockingFailureException -> 409).
+    @Override
+    public void cancelPaymentByEmail(String payUuid, String email) {
+        Payment payment = paymentRepository.findByPayUuid(payUuid)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 결제 내역입니다."));
+
+        // 안전성 체크: 본인 결제가 맞는지 확인
+        if (!payment.getMember().getEmail().equals(email)) {
+            throw new IllegalStateException("본인의 결제만 취소할 수 있습니다.");
+        }
+
+        // 상태 검증: 아직 승인 전(PENDING 또는 DEPOSITED)인 건만 취소 가능
+        if (payment.getStatus() != TransactionStatus.PENDING && payment.getStatus() != TransactionStatus.DEPOSITED) {
+            throw new IllegalStateException("이미 승인되었거나 취소할 수 없는 상태입니다.");
+        }
+
+        payment.updateStatus(TransactionStatus.CANCELLED);
+
+        virtualAccountRepository.findByPaymentId(payment.getId())
+                .ifPresent(va -> va.setStatus(AccountStatus.EXPIRED));
+
+        evictSellerPaymentsCache(payment.getProduct().getSellerId());
+    }
+
     // 3. 구매자가 "입금했어요" 클릭
     @Override
     public PaymentResponse reportDeposit(String payUuid) {

@@ -171,4 +171,45 @@ class PaymentServiceImplTest {
         // then
         assertThat(payment.getStatus()).isEqualTo(TransactionStatus.DEPOSITED);
     }
+
+    @Test
+    void 승인_전_결제는_본인이_취소할_수_있다() {
+        // given: 아직 승인 전(DEPOSITED)인 본인 결제
+        Payment payment = paymentWithStatus(TransactionStatus.DEPOSITED);
+        when(paymentRepository.findByPayUuid(payment.getPayUuid())).thenReturn(Optional.of(payment));
+
+        // when
+        paymentService.cancelPaymentByEmail(payment.getPayUuid(), buyer.getEmail());
+
+        // then
+        assertThat(payment.getStatus()).isEqualTo(TransactionStatus.CANCELLED);
+    }
+
+    @Test
+    void 이미_승인된_결제는_취소할_수_없다() {
+        // given: 이미 승인 완료(PAID)된 결제
+        Payment payment = paymentWithStatus(TransactionStatus.PAID);
+        when(paymentRepository.findByPayUuid(payment.getPayUuid())).thenReturn(Optional.of(payment));
+
+        // when & then
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> paymentService.cancelPaymentByEmail(payment.getPayUuid(), buyer.getEmail()));
+
+        assertThat(ex.getMessage()).contains("이미 승인되었거나 취소할 수 없는 상태입니다");
+        assertThat(payment.getStatus()).isEqualTo(TransactionStatus.PAID);
+    }
+
+    @Test
+    void 본인이_아니면_남의_결제를_취소할_수_없다() {
+        // given
+        Payment payment = paymentWithStatus(TransactionStatus.PENDING);
+        when(paymentRepository.findByPayUuid(payment.getPayUuid())).thenReturn(Optional.of(payment));
+
+        // when & then
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> paymentService.cancelPaymentByEmail(payment.getPayUuid(), "다른사람@test.com"));
+
+        assertThat(ex.getMessage()).contains("본인의 결제만 취소할 수 있습니다");
+        assertThat(payment.getStatus()).isEqualTo(TransactionStatus.PENDING);
+    }
 }
