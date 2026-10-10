@@ -108,6 +108,8 @@ public class SecurityConfig {
                         ).permitAll()
 
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                        // 관리자 전용으로 기획된 입금 시뮬레이터가 인증만 되면 누구나 호출 가능했던 권한 누락을 수정
+                        .requestMatchers("/api/simulator/**").hasRole("ADMIN")
                         .requestMatchers("/api/payments/**").hasAnyRole("USER", "ADMIN", "SELLER")
 
                         .anyRequest().authenticated()
@@ -141,6 +143,7 @@ public class SecurityConfig {
 
         configuration.setAllowedOrigins(List.of(
                 "http://localhost:5173",
+                "http://localhost:5175", // LOCAL DEV: 5173이 다른 프로세스에 점유돼 있어 5175로 로컬 프론트를 띄우면서 추가
                 "http://team01-alb-1090661033.ap-northeast-2.elb.amazonaws.com"
         ));
 

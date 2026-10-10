@@ -5,19 +5,19 @@ export const useAuthStore = create(
   persist(
     (set) => ({
       // Login.jsx나 다른 컴포넌트에서 직관적으로 쓰도록 상태명 정렬
-      isAuthenticated: false, 
-      user: null, // { name, role, email, ... } 백엔드가 주는 유저 객체 저장
+      isLoggedIn: false,
+      userInfo: null, // { name, role, email, ... } 백엔드가 주는 유저 객체 저장
 
       // 로그인 성공 시 호출되어 상태를 업데이트하는 함수
-      login: (userData) => set({ 
-        isAuthenticated: true, 
-        user: userData 
+      login: (userData) => set({
+        isLoggedIn: true,
+        userInfo: userData
       }),
 
       // 로그아웃 시 상태를 초기화하는 함수
-      logout: () => set({ 
-        isAuthenticated: false, 
-        user: null 
+      logout: () => set({
+        isLoggedIn: false,
+        userInfo: null
       }),
     }),
     { 
