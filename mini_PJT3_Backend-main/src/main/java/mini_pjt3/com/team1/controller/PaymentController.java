@@ -81,6 +81,19 @@ public class PaymentController {
         return ResponseEntity.ok(paymentService.reportDeposit(payUuid));
     }
 
+    /**
+     * [구매자] 승인 전 결제 취소
+     */
+    @PostMapping("/cancel/{payUuid}")
+    public ResponseEntity<?> cancelPayment(@PathVariable String payUuid, @AuthenticationPrincipal String email) {
+        if (email == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("인증 정보가 없습니다.");
+        }
+
+        paymentService.cancelPaymentByEmail(payUuid, email);
+        return ResponseEntity.ok().build();
+    }
+
     @PostMapping("/{payUuid}/expire")
     public ResponseEntity<Void> expirePayment(@PathVariable String payUuid) {
         // 🥊 여기서 ServiceImpl의 expirePayment를 호출합니다!

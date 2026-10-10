@@ -11,10 +11,15 @@ import mini_pjt3.com.team1.enums.BankCode;
 import mini_pjt3.com.team1.enums.TransactionStatus;
 import mini_pjt3.com.team1.repository.*;
 import mini_pjt3.com.team1.service.PaymentService;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.security.access.AccessDeniedException;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -30,9 +35,31 @@ public class PaymentServiceImpl implements PaymentService {
     private final VirtualAccountRepository virtualAccountRepository;
     private final MemberRepository memberRepository;
     private final ProductRepository productRepository;
+    private final RedisTemplate<String, Object> redisTemplate;
+    private final CacheManager cacheManager;
+
+    private static final String SELLER_PAYMENTS_CACHE = "sellerPayments";
+
+    // 가상계좌 중복 발급 방지 락이 유지되는 시간. 버튼 연타나 네트워크 재시도로 인한
+    // 중복 요청을 걸러내는 목적이라 짧게 잡아도 충분하다.
+    private static final Duration ISSUE_LOCK_TTL = Duration.ofSeconds(5);
+
+    /**
+     * 판매자의 결제 목록 캐시를 지운다. 결제 상태가 바뀌는 지점(승인/입금보고/만료/신규발급)마다
+     * 호출해서, 캐시가 무효화 시점을 놓치더라도 5분 TTL이 안전망으로 남아있는 구조.
+     * sellerId를 직접 파라미터로 받지 않는 메서드(reportDeposit, expirePayment)가 있어서
+     * 애노테이션 하나로는 표현이 안 돼, CacheManager를 직접 써서 조회 후 지우는 방식을 택했다.
+     */
+    private void evictSellerPaymentsCache(Long sellerId) {
+        Cache cache = cacheManager.getCache(SELLER_PAYMENTS_CACHE);
+        if (cache != null) {
+            cache.evict(sellerId);
+        }
+    }
 
     // 1. [조회] 판매자용 대시보드 리스트 수정
     @Override
+    @Cacheable(value = SELLER_PAYMENTS_CACHE, key = "#sellerId")
     @Transactional(readOnly = true)
     public List<PaymentResponse> getPaymentsBySeller(Long sellerId) {
 
@@ -83,6 +110,34 @@ public class PaymentServiceImpl implements PaymentService {
                 .paidAt(LocalDateTime.now())
                 .build();
         paymentHistoryRepository.save(history);
+        evictSellerPaymentsCache(sellerId);
+    }
+
+    // 2-1. [취소] 구매자가 승인 전 결제를 직접 취소
+    // Payment의 @Version 낙관적 락이 approvePayment와 동일한 행을 대상으로 하기 때문에,
+    // 승인 요청과 취소 요청이 거의 동시에 들어와도 먼저 커밋된 쪽만 성공하고
+    // 나머지는 버전 충돌로 막힌다(ObjectOptimisticLockingFailureException -> 409).
+    @Override
+    public void cancelPaymentByEmail(String payUuid, String email) {
+        Payment payment = paymentRepository.findByPayUuid(payUuid)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 결제 내역입니다."));
+
+        // 안전성 체크: 본인 결제가 맞는지 확인
+        if (!payment.getMember().getEmail().equals(email)) {
+            throw new IllegalStateException("본인의 결제만 취소할 수 있습니다.");
+        }
+
+        // 상태 검증: 아직 승인 전(PENDING 또는 DEPOSITED)인 건만 취소 가능
+        if (payment.getStatus() != TransactionStatus.PENDING && payment.getStatus() != TransactionStatus.DEPOSITED) {
+            throw new IllegalStateException("이미 승인되었거나 취소할 수 없는 상태입니다.");
+        }
+
+        payment.updateStatus(TransactionStatus.CANCELLED);
+
+        virtualAccountRepository.findByPaymentId(payment.getId())
+                .ifPresent(va -> va.setStatus(AccountStatus.EXPIRED));
+
+        evictSellerPaymentsCache(payment.getProduct().getSellerId());
     }
 
     // 3. 구매자가 "입금했어요" 클릭
@@ -96,12 +151,21 @@ public class PaymentServiceImpl implements PaymentService {
         }
 
         payment.updateStatus(TransactionStatus.DEPOSITED);
+        evictSellerPaymentsCache(payment.getProduct().getSellerId());
         return PaymentResponse.builder().payUuid(payUuid).status(TransactionStatus.DEPOSITED).build();
     }
 
 
     @Transactional
     public PaymentResponse issueVirtualAccount(Long memberId, PaymentRequest dto) {
+        // 0. 중복 발급 방지: 동일 회원이 동일 상품에 대해 짧은 시간 안에 다시 요청하면 막는다.
+        // 결제 버튼 연타나 네트워크 재시도로 같은 주문에 가상계좌가 두 번 발급되는 걸 방지하기 위함.
+        String lockKey = "payment:issue:lock:" + memberId + ":" + dto.getProductId();
+        Boolean acquired = redisTemplate.opsForValue().setIfAbsent(lockKey, "LOCKED", ISSUE_LOCK_TTL);
+        if (Boolean.FALSE.equals(acquired)) {
+            throw new IllegalStateException("이미 처리 중인 요청입니다. 잠시 후 다시 시도해주세요.");
+        }
+
         // 1. 멤버 조회
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
@@ -132,6 +196,7 @@ public class PaymentServiceImpl implements PaymentService {
                 .payment(payment)
                 .build();
         virtualAccountRepository.save(vAccount);
+        evictSellerPaymentsCache(product.getSellerId());
 
         // 5. 응답 리턴
         return PaymentResponse.builder()
@@ -272,6 +337,8 @@ public class PaymentServiceImpl implements PaymentService {
         virtualAccountRepository.findByPaymentId(payment.getId()).ifPresent(va -> {
             va.setStatus(AccountStatus.EXPIRED); //
         });
+
+        evictSellerPaymentsCache(payment.getProduct().getSellerId());
     }
 
 

@@ -3,6 +3,7 @@ package mini_pjt3.com.team1.repository;
 import mini_pjt3.com.team1.entity.Payment;
 import mini_pjt3.com.team1.entity.VirtualAccount;
 import mini_pjt3.com.team1.enums.TransactionStatus;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -23,6 +24,9 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
     List<Payment> findAllByStatusInAndUpdatedAtBefore(List<TransactionStatus> statuses, LocalDateTime dateTime);
 
+    // 결제마다 member(LAZY)와 virtualAccount(OneToOne mappedBy, 기본 EAGER)를 따로 조회하던 N+1을
+    // 한 번의 조인 조회로 줄이기 위해 EntityGraph로 함께 가져온다.
+    @EntityGraph(attributePaths = {"member", "virtualAccount"})
     List<Payment> findAllByProduct_SellerId(Long sellerId);
 
     long countByStatusAndCreatedAtAfter(TransactionStatus status, LocalDateTime createdAt);

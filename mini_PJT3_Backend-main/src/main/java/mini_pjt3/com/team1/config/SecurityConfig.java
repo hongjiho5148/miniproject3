@@ -108,6 +108,8 @@ public class SecurityConfig {
                         ).permitAll()
 
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                        // 관리자 전용으로 기획된 입금 시뮬레이터가 인증만 되면 누구나 호출 가능했던 권한 누락을 수정
+                        .requestMatchers("/api/simulator/**").hasRole("ADMIN")
                         .requestMatchers("/api/payments/**").hasAnyRole("USER", "ADMIN", "SELLER")
 
                         .anyRequest().authenticated()

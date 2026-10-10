@@ -42,6 +42,14 @@ public class Payment extends BaseEntity {
 
     private LocalDateTime paidAt;
 
+    /**
+     * 낙관적 락(Optimistic Lock)용 버전 컬럼.
+     * 동일한 결제 건에 대해 승인 요청이 동시에 들어와도, 먼저 커밋된 트랜잭션 이후의
+     * 버전 불일치를 감지해 나중 트랜잭션이 덮어쓰지 못하도록 막는다.
+     */
+    @Version
+    private Long version;
+
     @Builder
     public Payment(Long totalAmount, String productName, Member member, Product product, VirtualAccount virtualAccount, TransactionStatus status) {
         this.payUuid = UUID.randomUUID().toString(); // 생성 시 자동 생성

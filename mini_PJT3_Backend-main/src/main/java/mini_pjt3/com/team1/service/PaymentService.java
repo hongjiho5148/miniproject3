@@ -28,4 +28,7 @@ public interface PaymentService {
     PaymentResponse issueByEmail(String email, PaymentRequest dto);
 
     void expirePayment(String payUuid);
+
+    // 구매자가 승인 전 결제를 직접 취소
+    void cancelPaymentByEmail(String payUuid, String email);
 }
